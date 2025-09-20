@@ -44,13 +44,17 @@ RUN mkdir -p /home/runner/.terraform.d/plugin-cache \
 # Copy corporate certificates (all individual certificates)
 COPY certificates/github-server-cert.crt /usr/local/share/ca-certificates/github-server-cert.crt
 COPY certificates/pekao-level2-ca.crt /usr/local/share/ca-certificates/pekao-level2-ca.crt
-COPY certificates/pekao-root-ca.crt /usr/local/share/ca-certificates/pekao-root-ca.crt
+COPY certificates/pekao-root-ca-pem.crt /usr/local/share/ca-certificates/pekao-root-ca.crt
 
 # Set proper permissions for certificates
 RUN chmod 644 /usr/local/share/ca-certificates/*.crt
 
 # Update CA certificates store
 RUN update-ca-certificates
+
+# Create full certificate chain for .NET Core SSL validation
+RUN cat /usr/local/share/ca-certificates/pekao-root-ca.crt /usr/local/share/ca-certificates/pekao-level2-ca.crt > /etc/ssl/certs/pekao-full-chain.pem \
+    && chmod 644 /etc/ssl/certs/pekao-full-chain.pem
 
 # Verify certificates were added
 RUN ls -la /usr/local/share/ca-certificates/ && \
