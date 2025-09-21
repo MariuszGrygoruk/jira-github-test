@@ -1,56 +1,50 @@
-FROM ghcr.io/actions/actions-runner:latest
+FROM pakiety.dev.pekao.com.pl/artifactory/ghcr/actions/actions-runner:latest
 
-# Switch to root for installations
 USER root
 
-# Update package list and install required tools
+# Instalacja Terraform i narzędzi
 RUN apt-get update && apt-get install -y \
-    ca-certificates \
     curl \
-    wget \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    apt-transport-https \
-    python3 \
-    python3-pip \
     unzip \
     git \
     jq \
+    ca-certificates \
+    gnupg \
+    lsb-release \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Azure CLI
-RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
-
-# Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-    && apt-get update \
-    && apt-get install -y gh \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Terraform 1.9.8
-RUN wget -O terraform.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip \
+# Instalacja Terraform
+ENV TERRAFORM_VERSION=1.9.8
+RUN curl -fsSL https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip \
+    -o terraform.zip \
     && unzip terraform.zip \
     && mv terraform /usr/local/bin/ \
-    && chmod +x /usr/local/bin/terraform \
-    && rm terraform.zip
+    && rm terraform.zip \
+    && terraform version
 
-# Create terraform plugin cache directory
+# Instalacja Azure CLI
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+# Tworzenie katalogu cache dla Terraform
 RUN mkdir -p /home/runner/.terraform.d/plugin-cache \
     && chown -R runner:runner /home/runner/.terraform.d
 
-# Note: Corporate certificates will be loaded dynamically from ConfigMap via initContainer
+# Pre-cache popularnych providerów Terraform
+COPY setup-terraform.sh /tmp/
+RUN chmod +x /tmp/setup-terraform.sh && /tmp/setup-terraform.sh
 
-# Set environment variables for .NET Core SSL handling
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ENV SSL_CERT_DIR=/etc/ssl/certs
-ENV DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER=0
-ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
-
-# Switch back to runner user
 USER runner
 
-# Set terraform plugin cache directory
+# Ustawienie zmiennych środowiskowych
 ENV TF_PLUGIN_CACHE_DIR=/home/runner/.terraform.d/plugin-cache
+ENV TERRAFORM_CLI_PATH=/usr/local/bin/terraform
+
+# Proxy configuration - exclude Terraform registry and Azure endpoints
+ENV NO_PROXY="localhost,127.0.0.1,.cluster.local,.azurecr.io,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.cn.in.pekao.com.pl,github.cn.in.pekao.com.pl,registry.terraform.io,releases.hashicorp.com,checkpoint-api.hashicorp.com,login.microsoftonline.com,management.azure.com,.azure.com,.microsoft.com,.hashicorp.com"
+
+# Terraform SSL and proxy bypass configuration
+ENV TF_TLS_SKIP_VERIFY=1
+ENV CHECKPOINT_DISABLE=1
+ENV GOPROXY=direct
+ENV GOSUMDB=off
+ENV TERRAFORM_SKIP_VERIFY=1
